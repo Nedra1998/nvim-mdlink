@@ -1,0 +1,4 @@
+*nvim-mdlink* Convinience utilitys for working with links in markdown
+
+================================================================================
+CONTENTS                                                           *nvim-mdlink*
