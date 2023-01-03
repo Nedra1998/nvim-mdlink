@@ -65,3 +65,15 @@ See [:help nvim-mdlink-commands](https://github.com/Nedra1998/nvim-mdlink/blob/m
 
 | Command | Description |
 | ------- | ----------- |
+
+## :hammer_and_pick: To Do
+
+- [ ] Add configuration options
+- [ ] Write help documentation
+- [ ] Implement file name resolution
+- [ ] Implement anchor name resolution
+- [ ] Add Telescope integration
+  - [ ] Show all links in current document
+  - [ ] Show all backlinks to the current document
+- [ ] Add nvim-cmp integration
+- [ ] Support visual selection spanning line breaks when creating links

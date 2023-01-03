@@ -1,6 +1,9 @@
 local ts_utils = require("nvim-treesitter.ts_utils")
 local M = {}
 
+-- TODO: Add option to disabling setting keybindings
+-- TODO: Add option to override the file searching
+-- TODO: Add option to override the anchor searching
 M.config = {}
 
 -- Given a section node, find the heading_content child node
