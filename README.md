@@ -7,10 +7,8 @@
 
 - Follow link under cursor
 - Create new link from selected text
-- Search for links in the current buffer
-- Search for backlinks to the current file
-- **TODO** Autocompletion support for links to existing documents int he working
-  directory.
+- Open links in the default browser
+- Open binary files in the system default application
 
 ## :zap: Requirements
 
@@ -48,30 +46,21 @@ nvim-mdlink-configuration](https://github.com/Nedra1998/nvim-mdlink/blob/master/
 
 Each option is documented in `:help nvim-mdlink.OPTION_NAME`. Nested options
 can be accessed by appending `.`., for example `:help
-nvim-mdlink.journals.frequency`.
+nvim-mdlink.finder.file`.
 
 ## :rocket: Usage
 
 ### Keybinding
 
-See [:help nvim-mdlink-keys](https://github.com/Nedra1998/nvim-mdlink/blob/master/doc/nvim-mdlink.txt).
+See [:help nvim-mdlink-mappings](https://github.com/Nedra1998/nvim-mdlink/blob/master/doc/nvim-mdlink.txt).
 
-| Keybinding | Command | Description |
-| ---------- | ------- | ----------- |
-
-### Commands
-
-See [:help nvim-mdlink-commands](https://github.com/Nedra1998/nvim-mdlink/blob/master/doc/nvim-mdlink.txt).
-
-| Command | Description |
-| ------- | ----------- |
+| Keybinding | Description                                            |
+| ---------- | ------------------------------------------------------ |
+| `<CR>`     | Follow the link under the cursor, or create a new link |
+| `<BS>`     | After following a link, go back to the previous file   |
 
 ## :hammer_and_pick: To Do
 
-- [ ] Add configuration options
-- [ ] Write help documentation
-- [ ] Implement file name resolution
-- [ ] Implement anchor name resolution
 - [ ] Add Telescope integration
   - [ ] Show all links in current document
   - [ ] Show all backlinks to the current document
