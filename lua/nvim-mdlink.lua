@@ -3,8 +3,77 @@ local M = {}
 
 M.finder = {}
 
+local function get_abspath_from(from, to)
+  local from_path, _ = from:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
+  local to_path, to_file = to:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
+
+  if from_path == to_path then
+    return to
+  end
+
+  local path_parts = {}
+  for part in from_path:gmatch("[^\\/]+") do
+    table.insert(path_parts, part)
+  end
+
+  for part in to_path:gmatch("[^\\/]+") do
+    if part == ".." then
+      table.remove(path_parts)
+    elseif part ~= "." then
+      table.insert(path_parts, part)
+    end
+  end
+
+  return "/" .. table.concat(path_parts, "/") .. "/" .. to_file
+end
+
+local function get_relative_path(from, to)
+  local from_path, _ = from:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
+  local to_path, to_file = to:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
+
+  if from_path == to_path then
+    return "./" .. to_file
+  end
+
+  local from_path_parts, to_path_parts = {}, {}
+
+  for part in from_path:gmatch("[^\\/]+") do
+    table.insert(from_path_parts, part)
+  end
+
+  for part in to_path:gmatch("[^\\/]+") do
+    table.insert(to_path_parts, part)
+  end
+
+  for i, _ in ipairs(from_path_parts) do
+    if from_path_parts[i] ~= to_path_parts[i] then
+      break
+    end
+    from_path_parts[i] = nil
+    to_path_parts[i] = nil
+  end
+
+  local relative_path = ""
+  for _, part in pairs(from_path_parts) do
+    if part ~= nil then
+      relative_path = relative_path .. "../"
+    end
+  end
+
+  if #relative_path == 0 then
+    relative_path = "./"
+  end
+
+  for _, part in pairs(to_path_parts) do
+    if part ~= nil then
+      relative_path = relative_path .. part .. "/"
+    end
+  end
+
+  return relative_path .. to_file
+end
+
 local function open(file)
-  vim.notify("Opening " .. file)
   if vim.fn.has("mac") == 1 then
     vim.api.nvim_command("silent !open " .. file .. " &")
   elseif vim.fn.has("unix") then
@@ -64,11 +133,14 @@ local function navigate(file, section)
 end
 
 M.finder.file = function(query)
-  query = query:lower()
+  query = query:gsub("[%p%c]", ""):gsub("%s", "_"):gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1"):lower()
+  local cwd = vim.fn.getcwd()
   local files = {}
   for file in vim.fn.glob("**/*"):gmatch("[^\n]+") do
-    if file:gsub("[%p%c]", ""):gsub("%s", "_"):lower() == query then
-      table.insert(files, file)
+    if file:gsub("[%p%c]", ""):gsub("%s", "_"):lower():find(query) then
+      if vim.fn.isdirectory(cwd .. "/" .. file) == 0 then
+        table.insert(files, cwd .. "/" .. file)
+      end
     end
   end
 
@@ -79,13 +151,13 @@ M.finder.section = function(file, query)
   if file:sub(-3) ~= ".md" then
     return {}
   end
-  query = query:lower()
+  query = query:gsub("[%p%c]", ""):gsub("%s", "-"):gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1"):lower()
   local file_contents = vim.fn.readfile(file)
   local sections = {}
 
   for _, line in ipairs(file_contents) do
     local heading = line:match("^#+%s+(.+)")
-    if heading and heading:gsub("[%p%c]", ""):gsub("%s", "-"):lower() == query then
+    if heading and heading:gsub("[%p%c%s]", ""):lower():find(query) then
       table.insert(sections, heading)
     end
   end
@@ -150,7 +222,7 @@ M.create_link = function(mode)
   if file_query then
     local files = M.finder.file(file_query)
     if #files == 0 then
-      file = "./" .. file_query:gsub("[%p%c]", ""):gsub("%s", "_"):lower() .. ".md"
+      file = vim.fn.getcwd() .. "/" .. file_query:gsub("[%p%c]", ""):gsub("%s", "_"):lower() .. ".md"
     else
       file = files[1]
     end
@@ -170,13 +242,19 @@ M.create_link = function(mode)
       .. " "
       .. section_query
       .. "]("
-      .. file
+      .. get_relative_path(vim.api.nvim_buf_get_name(0), file)
       .. "#"
       .. section:gsub("[%p%c]", ""):gsub(" ", "-"):lower()
       .. ")"
       .. line:sub(vend + 1)
   elseif file and not section then
-    line = line:sub(0, vbegin - 1) .. "[" .. file_query .. "](" .. file .. ")" .. line:sub(vend + 1)
+    line = line:sub(0, vbegin - 1)
+      .. "["
+      .. file_query
+      .. "]("
+      .. get_relative_path(vim.api.nvim_buf_get_name(0), file)
+      .. ")"
+      .. line:sub(vend + 1)
   elseif not file and section then
     line = line:sub(0, vbegin - 1)
       .. "["
@@ -227,7 +305,7 @@ M.follow_link = function()
   local file = io.open(destination, "rb")
   if file then
     local contents = file:read(1024)
-    if contents:match("[^%g%s]") then
+    if contents and contents:match("[^%g%s]") then
       open(destination)
       return true
     end
@@ -241,6 +319,10 @@ M.follow_link = function()
     if destination:len() == 0 then
       destination = nil
     end
+  end
+
+  if destination and destination:len() ~= 0 then
+    destination = get_abspath_from(vim.api.nvim_buf_get_name(0), destination)
   end
 
   local current_buf = vim.api.nvim_buf_get_name(0)
@@ -264,7 +346,18 @@ M.pop_link = function()
 
     local bufnr = vim.fn.bufnr()
     if not vim.api.nvim_buf_get_option(bufnr, "modified") then
-      vim.api.nvim_buf_delete(bufnr, {})
+      local name = vim.api.nvim_buf_get_name(bufnr)
+      local in_stack = false
+      for _, value in ipairs(M.link_stack) do
+        if value == name then
+          in_stack = true
+          break
+        end
+      end
+
+      if not in_stack then
+        vim.api.nvim_buf_delete(bufnr, {})
+      end
     end
 
     for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
