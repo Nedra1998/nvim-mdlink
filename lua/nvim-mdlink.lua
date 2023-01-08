@@ -1,104 +1,107 @@
 local ts_utils = require("nvim-treesitter.ts_utils")
 local M = {}
 
--- TODO: Add option to disabling setting keybindings
--- TODO: Add option to override the file searching
--- TODO: Add option to override the anchor searching
-M.config = {}
+M.finder = {}
 
--- Given a section node, find the heading_content child node
-local function get_heading_content(node)
-  for child, _ in node:iter_children() do
-    if child:type() == "atx_heading" then
-      for it, field in child:iter_children() do
-        if field == "heading_content" then
-          return vim.treesitter.query.get_node_text(it, 0):gsub("^%s*", "")
-        end
-      end
-    elseif child:type() == "setext_heading" then
-      for it, field in child:iter_children() do
-        if field == "heading_content" then
-          return vim.treesitter.query.get_node_text(it, 0):gsub("^%s*", "")
-        end
-      end
-    end
+local function open(file)
+  vim.notify("Opening " .. file)
+  if vim.fn.has("mac") == 1 then
+    vim.api.nvim_command("silent !open " .. file .. " &")
+  elseif vim.fn.has("unix") then
+    vim.api.nvim_command("silent !xdg-open " .. file .. " &")
+  else
+    vim.notify("Cannot open path (" .. file .. ") on your operating system.")
   end
 end
 
--- Recursivly walk the nodes searching for section nodes
-local function find_headings(node, headings)
-  for child, _ in node:iter_children() do
-    if child:type() == "section" then
-      headings[get_heading_content(child):lower():gsub("[%p%c]", ""):gsub(" ", "-")] = child
-      find_headings(child, headings)
-    end
-  end
-  return headings
-end
-
-local function navigate(filename, anchor)
-  if filename:len() ~= 0 then
-    -- Open the link destination
-    local dir = vim.fn.fnamemodify(filename, ":h")
+local function navigate(file, section)
+  if file then
+    local dir = vim.fn.fnamemodify(file, ":h")
     if vim.fn.isdirectory(dir) == 0 then
       vim.fn.mkdir(dir, "p")
     end
-    vim.cmd("edit " .. filename)
+
+    vim.cmd("edit " .. file)
   end
 
-  if anchor ~= nil and anchor:len() ~= 0 then
-    -- Search for all section headings in the current document
+  if section then
+    local function find_node_by_field(node, field_name)
+      local nodes = {}
+
+      for child, field in node:iter_children() do
+        if field == field_name then
+          table.insert(nodes, child)
+        end
+
+        local child_nodes = find_node_by_field(child, field_name)
+        for _, child_node in ipairs(child_nodes) do
+          table.insert(nodes, child_node)
+        end
+      end
+      return nodes
+    end
+
     vim.treesitter.get_parser():parse()
-    local headings = {}
     for _, tree in ipairs(vim.treesitter.get_parser():trees()) do
-      find_headings(tree:root(), headings)
-    end
+      local sections = find_node_by_field(tree:root(), "heading_content")
 
-    -- If the anchor was found jump to that position
-    local node = headings[anchor]
-    if node ~= nil then
-      ts_utils.goto_node(node)
+      for _, node in ipairs(sections) do
+        local anchor = vim.treesitter.query
+          .get_node_text(node, 0)
+          :gsub("^%s*", "")
+          :gsub("%s*$", "")
+          :gsub("[%p%c]", "")
+          :gsub(" ", "-")
+          :lower()
+
+        if anchor == section then
+          ts_utils.goto_node(node)
+          return
+        end
+      end
     end
   end
 end
 
-M.set_keymap = function()
-  local bufnr = vim.fn.bufnr()
-  vim.keymap.set("n", "<CR>", function()
-    M.follow_or_create_link()
-  end, { buffer = bufnr, noremap = true, silent = true, desc = "Follow or create link" })
-  vim.keymap.set(
-    "v",
-    "<CR>",
-    [[:lua require'nvim-mdlink'.create_link('v')<CR>]],
-    { buffer = bufnr, noremap = true, silent = true, desc = "Create link" }
-  )
-  vim.keymap.set(
-    "n",
-    "<BS>",
-    [[(&modified == 0 ? ':bdelete<CR>' : ':bprevious<CR>')]],
-    { buffer = bufnr, noremap = true, silent = true, expr = true, desc = "Goto previous document" }
-  )
+M.finder.file = function(query)
+  query = query:lower()
+  local files = {}
+  for file in vim.fn.glob("**/*"):gmatch("[^\n]+") do
+    if file:gsub("[%p%c]", ""):gsub("%s", "_"):lower() == query then
+      table.insert(files, file)
+    end
+  end
+
+  return files
 end
 
-M.setup = function(args)
-  M.config = vim.tbl_deep_extend("force", M.config, args or {})
+M.finder.section = function(file, query)
+  if file:sub(-3) ~= ".md" then
+    return {}
+  end
+  query = query:lower()
+  local file_contents = vim.fn.readfile(file)
+  local sections = {}
 
-  vim.api.nvim_create_augroup("MDLinkKeymap", { clear = true })
-  vim.api.nvim_create_autocmd("FileType", {
-    group = "MDLinkKeymap",
-    pattern = { "markdown" },
-    callback = M.set_keymap,
-  })
+  for _, line in ipairs(file_contents) do
+    local heading = line:match("^#+%s+(.+)")
+    if heading and heading:gsub("[%p%c]", ""):gsub("%s", "-"):lower() == query then
+      table.insert(sections, heading)
+    end
+  end
+
+  return sections
 end
 
-M.find_file = function(query)
-  return nil
-end
+M.config = {
+  keymap = true,
+  finder = {
+    file = M.finder.file,
+    section = M.finder.section,
+  },
+}
 
-M.find_links = function() end
-
-M.find_backlinks = function() end
+M.link_stack = {}
 
 M.create_link = function(mode)
   mode = mode or vim.fn.mode()
@@ -124,7 +127,6 @@ M.create_link = function(mode)
     -- Get the position of the start and end of the selected text
     -- TODO: This currently only works for text on a single line
     vbegin, vend = vim.fn.getpos("'<"), vim.fn.getpos("'>")
-    vim.notify(vim.inspect(vbegin) .. " -- " .. vim.inspect(vend))
     line = vim.fn.getline(vbegin[2])
     lineno = vbegin[2]
     vbegin, vend = vbegin[3], vend[3]
@@ -132,61 +134,186 @@ M.create_link = function(mode)
     return false
   end
 
-  -- Find the file to link to
-  local file = M.find_file(line:sub(vbegin, vend))
-  if file == nil then
-    -- If no file was found create new filename
-    file = "./" .. line:sub(vbegin, vend):gsub("[%p%c]", ""):gsub("%s", "_"):lower() .. ".md"
+  local file_query, section_query = line:sub(vbegin, vend), nil
+  local idx = file_query:find("#")
+  if idx then
+    section_query = file_query:sub(idx + 1)
+    file_query = file_query:sub(1, idx - 1)
+
+    if file_query:len() == 0 then
+      file_query = nil
+    end
   end
 
-  -- Update the line replacing the selected text with the link
-  line = line:sub(0, vbegin - 1) .. "[" .. line:sub(vbegin, vend) .. "](" .. file .. ")" .. line:sub(vend + 1)
+  local file, section = nil, nil
+
+  if file_query then
+    local files = M.finder.file(file_query)
+    if #files == 0 then
+      file = "./" .. file_query:gsub("[%p%c]", ""):gsub("%s", "_"):lower() .. ".md"
+    else
+      file = files[1]
+    end
+  end
+
+  if section_query then
+    local sections = M.finder.section(file or vim.api.nvim_buf_get_name(0), section_query)
+    if #sections ~= 0 then
+      section = sections[1]
+    end
+  end
+
+  if file and section then
+    line = line:sub(0, vbegin - 1)
+      .. "["
+      .. file_query
+      .. " "
+      .. section_query
+      .. "]("
+      .. file
+      .. "#"
+      .. section:gsub("[%p%c]", ""):gsub(" ", "-"):lower()
+      .. ")"
+      .. line:sub(vend + 1)
+  elseif file and not section then
+    line = line:sub(0, vbegin - 1) .. "[" .. file_query .. "](" .. file .. ")" .. line:sub(vend + 1)
+  elseif not file and section then
+    line = line:sub(0, vbegin - 1)
+      .. "["
+      .. section_query
+      .. "](#"
+      .. section:gsub("[%p%c]", ""):gsub(" ", "-"):lower()
+      .. ")"
+      .. line:sub(vend + 1)
+  else
+    return false
+  end
   vim.fn.setline(lineno, line)
 
   return true
 end
 
 M.follow_link = function()
-  -- Use treesitter to parse the current buffer
   vim.treesitter.get_parser():parse()
 
-  -- Find the treesitter inline_link node at the current cursor position
   local pos = vim.fn.getcurpos()
-  local link_node = vim.treesitter.get_node_at_pos(pos[1], pos[2] - 1, pos[3], { ignore_injections = false })
-  while link_node ~= nil and link_node:type() ~= "inline_link" and link_node:type() ~= "inline" do
-    link_node = link_node:parent()
+  local node = vim.treesitter.get_node_at_pos(pos[1], pos[2] - 1, pos[3], { ignore_injections = false })
+  while node ~= nil and node:type() ~= "inline_link" and node:type() ~= "inline" do
+    node = node:parent()
   end
 
-  if link_node == nil or link_node:type() ~= "inline_link" then
+  if not node or node:type() ~= "inline_link" then
     return false
   end
 
-  -- Extract the link text and link destination from the inline link
-  local link_destination, anchor_text = nil, nil
-  for child, _ in link_node:iter_children() do
+  local destination = nil
+  for child, _ in node:iter_children() do
     if child:type() == "link_destination" then
-      link_destination = vim.treesitter.query.get_node_text(child, pos[1])
+      destination = vim.treesitter.query.get_node_text(child, pos[1])
     end
   end
 
-  if link_destination == nil then
+  if destination == nil or destination:len() == 0 then
     return false
   end
 
-  -- Strip the section anchor
-  local anchor_start = link_destination:find("#")
-  if anchor_start then
-    anchor_text = link_destination:sub(anchor_start + 1)
-    link_destination = link_destination:sub(1, anchor_start - 1)
+  -- If the link is a url use the system launcher
+  if destination:match("^https?://[%w%.%-]+") then
+    open(destination)
+    return true
   end
 
-  navigate(link_destination, anchor_text)
+  -- Readh the chunk of the file to see if it is binary
+  local file = io.open(destination, "rb")
+  if file then
+    local contents = file:read(1024)
+    if contents:match("[^%g%s]") then
+      open(destination)
+      return true
+    end
+  end
+
+  local idx = destination:find("#")
+  local section = nil
+  if idx then
+    section = destination:sub(idx + 1)
+    destination = destination:sub(1, idx - 1)
+    if destination:len() == 0 then
+      destination = nil
+    end
+  end
+
+  local current_buf = vim.api.nvim_buf_get_name(0)
+  navigate(destination, section)
+  local new_buf = vim.api.nvim_buf_get_name(0)
+
+  if destination then
+    if #M.link_stack == 0 or M.link_stack[#M.link_stack] ~= current_buf then
+      M.link_stack = { current_buf, new_buf }
+    else
+      table.insert(M.link_stack, new_buf)
+    end
+  end
+
   return true
+end
+
+M.pop_link = function()
+  if #M.link_stack > 1 and M.link_stack[#M.link_stack] == vim.api.nvim_buf_get_name(0) then
+    table.remove(M.link_stack)
+
+    local bufnr = vim.fn.bufnr()
+    if not vim.api.nvim_buf_get_option(bufnr, "modified") then
+      vim.api.nvim_buf_delete(bufnr, {})
+    end
+
+    for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_get_name(buffer) == M.link_stack[#M.link_stack] then
+        vim.api.nvim_set_current_buf(buffer)
+        break
+      end
+    end
+  end
 end
 
 M.follow_or_create_link = function()
   if not M.follow_link() then
     M.create_link()
+  end
+end
+
+M.set_keymap = function()
+  local bufnr = vim.fn.bufnr()
+  vim.keymap.set(
+    "n",
+    "<CR>",
+    M.follow_or_create_link,
+    { buffer = bufnr, noremap = true, silent = true, desc = "Follow or create link" }
+  )
+  vim.keymap.set(
+    "v",
+    "<CR>",
+    [[:lua require'nvim-mdlink'.create_link('v')<CR>]],
+    { buffer = bufnr, noremap = true, silent = true, desc = "Create link" }
+  )
+  vim.keymap.set(
+    "n",
+    "<BS>",
+    M.pop_link,
+    { buffer = bufnr, noremap = true, silent = true, desc = "Goto previous document" }
+  )
+end
+
+M.setup = function(args)
+  M.config = vim.tbl_deep_extend("force", M.config, args or {})
+
+  if M.config.keymap then
+    vim.api.nvim_create_augroup("MDLinkKeymap", { clear = true })
+    vim.api.nvim_create_autocmd("FileType", {
+      group = "MDLinkKeymap",
+      pattern = { "markdown" },
+      callback = M.set_keymap,
+    })
   end
 end
 
