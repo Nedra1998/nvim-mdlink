@@ -39,7 +39,7 @@ local function sanitize_header(input)
   return input:gsub("-", " "):gsub("[%p%c]", ""):gsub("%s", "-"):lower()
 end
 
-local function list_files()
+M.list_files = function()
   if FILE_CACHE["ttl"] ~= nil and os.time() < FILE_CACHE["ttl"] then
     return FILE_CACHE["data"]
   end
@@ -61,7 +61,7 @@ local function list_files()
   return files
 end
 
-local function list_headings(input)
+M.list_headings = function(input)
   local tsparser, source, key = nil, nil, nil
   if type(input) == "number" then
     tsparser, source = vim.treesitter.get_parser(input), input
@@ -92,10 +92,13 @@ local function list_headings(input)
   for _, tree in ipairs(tsparser:trees()) do
     for _, node, _ in query:iter_captures(tree:root(), source) do
       local row, col, _ = node:start()
-      headings[sanitize_header(vim.treesitter.get_node_text(node, source):gsub("^%s", ""):gsub("%s$", ""))] = {
-        row,
-        col,
-      }
+      local header = vim.treesitter.get_node_text(node, source):gsub("^%s", ""):gsub("%s$", "")
+      table.insert(headings, {
+        header = header,
+        key = sanitize_header(header),
+        row = row,
+        col = col,
+      })
     end
   end
 
@@ -119,7 +122,7 @@ local function system_open(path)
   return true
 end
 
-local function relative_path(from, to)
+M.relative_path = function(from, to)
   local from_path, _ = from:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
   local to_path, to_file = to:match("(.-)([^\\/]-%.?([^%.\\/]*))$")
   if from_path == to_path then
@@ -206,10 +209,12 @@ M.open = function(path)
 
   -- If there is an header then jump to that header in the current file
   if #header ~= 0 then
-    local headings = list_headings(0)
-    local header = headings[header]
-    if header ~= nil then
-      vim.fn.cursor(header[1] + 1, 1)
+    local headings = M.list_headings(0)
+    for _, value in pairs(headings) do
+      if value.key == header then
+        vim.fn.cursor(value.row + 1, 1)
+        break
+      end
     end
   end
 
@@ -314,7 +319,7 @@ M.create_link = function(mode)
 
   if #file_query ~= 0 then
     -- Search for a matching file in any of the files in the cwd
-    local files = list_files()
+    local files = M.list_files()
     local file_query_matcher = file_query:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
     for _, filepath in pairs(files) do
       local basename = vim.fn.fnamemodify(filepath, ":p:t:r")
@@ -337,15 +342,15 @@ M.create_link = function(mode)
 
     -- Get the markdown headings from the selected file
     if not file then
-      headings = list_headings(0)
+      headings = M.list_headings(0)
     else
-      headings = list_headings(file)
+      headings = M.list_headings(file)
     end
 
     -- Search the discovered headers for the query string
-    for head, _ in pairs(headings) do
-      if head:match(header_query_matcher) then
-        header = head
+    for _, value in pairs(headings) do
+      if value.key:match(header_query_matcher) then
+        header = value.key
         break
       end
     end
@@ -359,11 +364,11 @@ M.create_link = function(mode)
   -- Build the new markdown link
   local link = nil
   if file and header then
-    link = "[" .. header_input .. "](" .. relative_path(vim.api.nvim_buf_get_name(0), file) .. "#" .. header .. ")"
+    link = "[" .. header_input .. "](" .. M.relative_path(vim.api.nvim_buf_get_name(0), file) .. "#" .. header .. ")"
   elseif header then
     link = "[" .. header_input .. "](#" .. header .. ")"
   elseif file then
-    link = "[" .. file_input .. "](" .. relative_path(vim.api.nvim_buf_get_name(0), file) .. ")"
+    link = "[" .. file_input .. "](" .. M.relative_path(vim.api.nvim_buf_get_name(0), file) .. ")"
   else
     return false
   end
