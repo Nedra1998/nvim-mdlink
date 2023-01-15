@@ -1,7 +1,7 @@
 # nvim-mdlink
 
 **nvim-mdlink** provides additional functionality when working with markdown
-*links.
+links.
 
 ## :sparkles: Features
 
@@ -9,6 +9,7 @@
 - Create new link from selected text
 - Open links in the default browser
 - Open binary files in the system default application
+- [nvim-cmp](https://github.com/hrsh7th/nvim-cmp) markdown link completion integration
 
 ## :zap: Requirements
 
@@ -38,15 +39,15 @@ or with [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 require('nvim-mdlink').setup({
+  keymap = true,
+  cmp = true
 })
 ```
 
 For a complete list of available configuration options see [:help
 nvim-mdlink-configuration](https://github.com/Nedra1998/nvim-mdlink/blob/master/doc/nvim-mdlink.txt).
 
-Each option is documented in `:help nvim-mdlink.OPTION_NAME`. Nested options
-can be accessed by appending `.`., for example `:help
-nvim-mdlink.finder.file`.
+Each option is documented in `:help nvim-mdlink.OPTION_NAME`.
 
 ## :rocket: Usage
 
@@ -59,10 +60,25 @@ See [:help nvim-mdlink-mappings](https://github.com/Nedra1998/nvim-mdlink/blob/m
 | `<CR>`     | Follow the link under the cursor, or create a new link |
 | `<BS>`     | After following a link, go back to the previous file   |
 
-## :hammer_and_pick: To Do
+### nvim-cmp Integration
 
-- [ ] Add Telescope integration
-  - [ ] Show all links in current document
-  - [ ] Show all backlinks to the current document
-- [ ] Add nvim-cmp integration
-- [ ] Support visual selection spanning line breaks when creating links
+
+If [nvim-mdlink.cmp](https://github.com/Nedra1998/nvim-mdlink/blob/master/doc/nvim-mdlink.txt)
+is `true`, then the `mdlink` completion source will be registered in nvim-cmp is available (i.e. if nvim-cmp has already been loaded by your plugin manager). If nvim-mdlink is loaded before nvim-cmp, then you will need to manually register the completion source in the configuration for nvim-cmp, by using the following snippet.
+
+```lua
+local has_mdlink, mdlink = pcall(require, "nvim-mdlink.cmp")
+if has_mdlink then
+  require('cmp').register_source("mdlink", mdlink.new())
+end
+```
+
+Then you are able to make use the the mdlink completion source in your nvim-cmp configuration.
+
+```lua
+require('cmp').setup {
+  sources = {
+    { name = 'mdlink' }
+  }
+}
+```

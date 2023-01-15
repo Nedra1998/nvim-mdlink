@@ -17,6 +17,7 @@ Features
     - Create new link from selected text
     - Open links in the default browser
     - Open binary files with system default application
+    - Integration wtih nvim-cmp as link conmpletion source
 
 ================================================================================
 CONFIGURATION                                        *nvim-mdlink-configuration*
@@ -31,11 +32,19 @@ Subsequent calls to setup will replace the previous configuration.
 >
     require('nvim-mdlink').setup({
       keymap = true,
-      finder = {
-        file = require('nvim-mdlink').finder.file,
-        section = require('nvim-mdlink').finder.section
-      },
+      cmp = true
     })
+<
+
+For better integration with nvim-cmp, it is recommended to add a snippet to your
+nvim-cmp to register the mdlink completion source if it has not already been
+registered.
+
+>
+    local has_mdlink, mdlink = pcall(require, "nvim-mdlink.cmp")
+    if has_mdlink then
+      require('cmp').register_source("mdlink", mdlink.new())
+    end
 <
 
 Here is a list of the options available in the setup call:
@@ -45,76 +54,140 @@ Setup the default keymap for markdown buffers. See |nvim-mdlink-keys| for
 details on the default keymap.
   Type: `bool`, Default: `true`
 
-*nvim-mdlink.finder*
-A table of callback functions used for finding files and sections when creating
-new links.
-
-    *nvim-mdlink.finder.file*
-    Callback function for searching for a file when creating a new link.
-      Type: `function(query)`
-
-      The function is passed an optional query string, and is expected to return
-      a list of possible files to link against. The first file in the list will
-      be used to generate the link. If no files are found, then it should return
-      an empty list.
-
-    *nvim-mdlink.finder.section*
-    Callback function for searching a given file for section titles when
-    creating a new link.
-      Type: `function(file, query)`
-
-      The function is provided the filename to search for sections within, and
-      an optional query string. It should return a list of section titles that
-      satisfy the query. The first section in the list will be used for creating
-      new links. If no sections are found or no sections match the query, then
-      it should return an empty list.
+*nvim-mdlink.cmp*
+Automatically setup the integration the nvim-cmp as a completion source. If
+nvim-cmp is not available it will be skipped and users must register the
+completion source manually when nvim-cmp is loaded.
+  Type: `bool`, Default: `true`
 
 ================================================================================
 API                                                            *nvim-mdlink-api*
 
-finder.file(query)                                 *nvim-mdlink.finder.file()*
+find.link()                                          *nvim-mdlink.find.link()*
+    Searches for the markdown link underneath the current cursor position within
+    the current buffer.
+
+    Return: ~
+        (boolean|string) the string contained in the link destination, if a link
+        was found and it has a destination. Otherwise it will return a boolean
+        of a link was found.
+
+find.file(query: string)                             *nvim-mdlink.find.file()*
     Searches for markdown files in the current directory which contain the query
     as a substring. Both the filename and the query are sanitized before the
     comparision is made.
 
     Return: ~
-        (table) of file paths to markdown files which contain the query.
+        (string|nil) the path to the matched file, or nil of no file was found.
 
-finder.section(file, query)                     *nvim-mdlink.finder.section()*
-    Searches a specified markdown file for section header that contains the
-    given query string. Both the query string and the section header are
-    sanitized before the comparision is made.
-
-    Return: ~
-        (table) of section headings in the markdown file which contain the
-        query.
-
-create_link(mode)                                  *nvim-mdlink.create_link()*
-    Create a new markdown link. In normal mode it uses the current word under
-    the cursor, and in visual mode it uses the selected text. When creating a
-    new link it uses |nvim-mdlink.finder.file| and |nvim-mdlink.finder.section|
-    for finding an existing file or section matching the selected text.
+find.header(source: number|string, query: string)  *nvim-mdlink.find.header()*
+    Search a source (either a buffer number of a file path) for section header
+    that contains the given query string. Both the query string and the section
+    header are sanitized before the comparison is made.
 
     Return: ~
-        (bool) `true` if the link was created successfully, `false` otherwise.
+        (string|nil) the sanitized header label if one was found, otherwise nil.
 
-follow_link()                                      *nvim-mdlink.follow_link()*
-    Follow the markdown link under the cursor, opening the file and optionally
-    jumping to the section header. If the file doesn't already exist, it is
-    created.
+list.files()                                        *nvim-mdlink.list.files()*
+    List all files in the current working directory recursivly. Because this
+    oepration can be expensive, the list of files will be cached internally to
+    improve repeate calls to the function.
 
     Return: ~
-        (bool) `true` if a link was found, `false` otherwise.
+        (table) of file paths to all files within the current working directory.
 
-follow_or_create_link()                  *nvim-mdlink.follow_or_create_link()*
-    First attempt to follow a link under the current cursor using
-    |nvim-mdlink.follow_link()|, and if that fails, it will attempt to create a
-    new link using |nvim-mdlink.create_link()|.
+list.headers(source: number|string)               *nvim-mdlink.list.headers()*
+    List all markdown headings in the provided source (either a buffer number or
+    a file path). Because this operation can be expensive, the returned list of
+    headings will be cached internally to improve performance of repeat calls to
+    the same function.
 
-pop_link()                                            *nvim-mdlink.pop_link()*
-    After following a link with |nvim-mdlink.follow_link()| this function jumps
-    back to the previous buffer, and closed the current buffer if it has not
-    been modified.    
+    Return: ~
+        (table) of entries for every header in the markdown source. The
+        structure of each entry is `{ header, key, row, col }` where `header` is
+        the source text of the markdown header. `key` is a sanitized version of
+        the header, which is made for easier validation and searching. `row` and
+        `col` denote the position of the header within the source.
+
+open.system(path: string)                          *nvim-mdlink.open.system()*
+    Use the system default application to open a given path argument.
+
+    Return: ~
+        (boolean) `true` if the system launcher was executed, `false` otherwise.
+
+open.file(path: string)                              *nvim-mdlink.open.file()*
+    Open the given file in a new buffer, and create any parent directories if
+    necessary.
+
+    Return: ~
+        (boolean) `true` if the file was opened, `false` otherwise.
+
+open.header(header: string)                        *nvim-mdlink.open.header()*
+    Jump to the header position in the current buffer. The input must exactly
+    match the sanitized values of one of the given headers. If no match is found
+    then the cursor will not be moved.
+
+    Return: ~
+        (boolean) `true` if the header was found, `false` otherwise.
+
+build_link(label: string, file?: string, header?: string)  *nvim-mdlink.build_link()*
+    Build the appropriate markdown link given in input arguments. This function
+    also converts the provided file name to use the relative path to the current
+    buffer.
+
+    Return: ~
+        (string|nil) containing the constructed markdown link. If neither file
+        or header are provided then it will return nil.
+
+stack_pop()                                          *nvim-mdlink.stack_pop()*
+    After following a link with |nvim-mdlink.follow()| the previous buffer name
+    is pushed to an internal stack. This function pops the most recent entry off
+    of the stack and returns focus to the previously focused buffer, closing the
+    current buffer.
+
+    If the current buffer does not match the last entry in the stack, then the
+    stack is invalidated and cleared. If the current buffer has been modified it
+    will not be closed.
+
+create(mode: string)                                      *nvim-mdlink.mode()*
+    Create a link from the current selected text. In normal mode the selected
+    text will be the word under the cursor, and in visual mode it will be the
+    selected text.
+
+    The function will then take that selected text and search for a file and
+    optionally a header in that file and then replaces the selected text with a
+    new markdown link to that file and header using the relative file path.
+
+    If no file is found, then it will create a link to a new file in the same
+    directory as the current file.
+
+    Return: ~
+        (boolean) `true` if the link was successfully created, `false`
+        otherwise.
+
+follow()                                                *nvim-mdlink.follow()*
+    Find a markdown link under the current cursor position, and follow that
+    link. If the link is to a url or to a binary file that it will use
+    |nvim-mdlink.open.system()| to open the file using the default system
+    launcher for that filetype. If there is a file present in the link
+    destination then it wil use |nvim-mdlink.open.file()| to open the file in a
+    new buffer. And if there is an anchor in the link destination, then it will
+    use |nvim-mdlink.open.header()| to navigate to that header in the buffer.
+
+    Return: ~
+        (boolean) `true` a link was found, `false` otherwise.
+
+follow_or_create()                            *nvim-mdlink.follow_or_create()*
+    Attempts to follow a link under the cursor using |nvim-mdlink.follow()|, and
+    if no link is found then it will use |nvim-mdlink.create()| to create a new
+    link.
+    
+    This is one of the primary interfaces used for interacting with the library,
+    see |nvim-mdlink-mappings| for details.
+
+    Return: ~
+        (boolean) `true` a link was found or created, `false` otherwise.
+
 
 ================================================================================
 MAPPINGS                                                  *nvim-mdlink-mappings*
@@ -123,5 +196,5 @@ By default the keymaps are enabled, and will be automatically set as buffer
 local mappings for any markdown files. The default keymaps can be disabled by
 setting |nvim-mdlink.keymap|.
 
-`<CR>` follow_or_create_link  follow a link under the cursor or create a new link
-`<BS>` pop_link               after following a link go back to the previous buffer
+`<CR>` follow_or_create  follow a link under the cursor or create a new link
+`<BS>` stack_pop         after following a link go back to the previous buffer
