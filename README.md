@@ -14,6 +14,9 @@ links.
 ## :zap: Requirements
 
 - [Neovim >= **0.8.0**](https://github.com/neovim/neovim/wiki/Installing-Neovim)
+- [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter)
+  - [markdown](https://github.com/MDeiml/tree-sitter-markdown)
+  - [markdown-inline](https://github.com/MDeiml/tree-sitter-markdown)
 
 ## :package: Installation
 
