@@ -1,6 +1,8 @@
 local source = {}
 local cmp = require("cmp")
 
+local LINK_REGEX = [=[%[([^#]*)#?$]=]
+
 source.new = function()
   return setmetatable({ mdlink = nil }, { __index = source })
 end
@@ -10,11 +12,29 @@ source.is_available = function()
 end
 
 source.get_trigger_characters = function()
-  return { "[" }
+  return { "[", "#" }
 end
 
 source.get_keyword_pattern = function()
   return [=[\%(\s\|^\)\zs\[[^ \]]*\]\?]=]
+end
+
+source.resolve = function(self, item, callback)
+  -- When the completion item is selected (before executed), if it is a file 
+  -- link and the file is a markdown file then parse the headers and use the 
+  -- first header as the link text.
+  if item.data ~= nil and item.data.file ~= nil then
+    local filetype = vim.filetype.match({ filename = item.data.file })
+
+    if filetype == "markdown" then
+      local headings = self.mdlink.list.headers(item.data.file)
+      local first = headings[1]
+      if first then
+        item.insertText = self.mdlink.build_link(first.header, item.data.file)
+      end
+    end
+  end
+  callback(item)
 end
 
 source.execute = function(_, item, callback)
@@ -27,18 +47,30 @@ source.execute = function(_, item, callback)
   callback(item)
 end
 
-source.complete = function(self, _, callback)
-  local bufname = vim.api.nvim_buf_get_name(0)
-  local items = {}
-
+source.complete = function(self, params, callback)
   if self.mdlink == nil then
     self.mdlink = require("nvim-mdlink")
   end
 
+  local items = {}
+
+  local m = params.context.cursor_before_line:match(LINK_REGEX)
+  if m ~= nil then
+    if params.context.cursor_before_line:sub(-1) ~= "#" then
+      items = self._file_canidates(self)
+    else
+      items = self._heading_canidates(self, m)
+    end
+  end
+  callback(items)
+end
+
+source._file_canidates = function(self)
+  local items = {}
+
   for _, file in pairs(self.mdlink.list.files()) do
     local basename = vim.fn.fnamemodify(file, ":t")
     local name = vim.fn.fnamemodify(basename, ":r")
-    local filetype = vim.filetype.match({ filename = file })
 
     -- Add an entry for every file in the CWD
     table.insert(items, {
@@ -47,29 +79,27 @@ source.complete = function(self, _, callback)
       insertText = self.mdlink.build_link(name, file),
       filterText = "[" .. name .. "]",
       kind = cmp.lsp.CompletionItemKind.File,
+      data = { file = file },
     })
+  end
 
-    -- For markdown file also add links for the different sections
-    if filetype == "markdown" then
+  return items
+end
+
+source._heading_canidates = function(self, key)
+  local bufname = vim.api.nvim_buf_get_name(0)
+  local items = {}
+
+  for _, file in pairs(self.mdlink.list.files()) do
+    local basename = vim.fn.fnamemodify(file, ":t")
+    local name = vim.fn.fnamemodify(basename, ":r")
+    local filetype = vim.filetype.match({ filename = file })
+
+    if filetype == "markdown" and ((key == "" and file == bufname) or (name == key)) then
       local headings = self.mdlink.list.headers(file)
 
-      -- For the first heading in the file, add an extra item using the first
-      -- heading as an alias to the file
-      local first = headings[1]
-      if first then
-        table.insert(items, {
-          word = "[" .. first.key,
-          label = first.header,
-          insertText = self.mdlink.build_link(first.header, file),
-          filterText = "[" .. first.key,
-          kind = cmp.lsp.CompletionItemKind.File,
-        })
-      end
-
       for _, value in pairs(headings) do
-        if file == bufname then
-          -- For the current file link the the headings directly without
-          -- referencing the filepath
+        if key == "" and file == bufname then
           table.insert(items, {
             word = "[#" .. value.key,
             label = "#" .. value.header,
@@ -77,9 +107,7 @@ source.complete = function(self, _, callback)
             filterText = "[#" .. value.key,
             kind = cmp.lsp.CompletionItemKind.Field,
           })
-        else
-          -- For other markdown files, create suggestions for every heading in
-          -- the file
+        elseif name == key then
           table.insert(items, {
             word = "[" .. name .. "#" .. value.key,
             label = name .. "#" .. value.header,
@@ -92,7 +120,7 @@ source.complete = function(self, _, callback)
     end
   end
 
-  callback(items)
+  return items
 end
 
 return source
