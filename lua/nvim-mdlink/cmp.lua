@@ -20,8 +20,8 @@ source.get_keyword_pattern = function()
 end
 
 source.resolve = function(self, item, callback)
-  -- When the completion item is selected (before executed), if it is a file 
-  -- link and the file is a markdown file then parse the headers and use the 
+  -- When the completion item is selected (before executed), if it is a file
+  -- link and the file is a markdown file then parse the headers and use the
   -- first header as the link text.
   if item.data ~= nil and item.data.file ~= nil then
     local filetype = vim.filetype.match({ filename = item.data.file })
