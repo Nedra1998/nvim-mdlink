@@ -253,7 +253,7 @@ M.find.link = function()
 
   -- Find the inline link under the current cursor position
   local pos = vim.fn.getcurpos()
-  local node = vim.treesitter.get_node_at_pos(pos[1], pos[2] - 1, pos[3], { ignore_injections = false })
+  local node = vim.treesitter.get_node({ ignore_injections = false })
   while node ~= nil and node:type() ~= "inline_link" and node:type() ~= "inline" do
     node = node:parent()
   end
@@ -437,8 +437,49 @@ M.follow = function()
   if fileio then
     local contents = fileio:read(1024)
     fileio:close()
-    if contents and contents:match("[^%g%s]") then
-      return M.open.system(dest)
+    if contents then
+      for i = 1, #contents do
+        local c = contents:sub(i, i)
+        local b = string.byte(c)
+
+        if b < 32 and not (b == 9 or b == 10 or b == 13) then
+          return M.open.system(dest)
+        end
+
+        if b >= 128 and b <= 191 then
+          -- Continuation byte, skip it
+        elseif b >= 192 and b < 223 then
+          -- 2-byte sequence
+          local c2 = contents:sub(i + 1, i + 1)
+          local b2 = string.byte(c2)
+          if not (b2 >= 128 and b2 <= 191) then
+            return M.open.system(dest)
+          else
+            i = i + 1
+          end
+        elseif b >= 224 and b <= 239 then
+          -- 3-byte sequence
+          local c2 = contents:sub(i + 1, i + 1)
+          local c3 = contents:sub(i + 2, i + 2)
+          local b2, b3 = string.byte(c2), string.byte(c3)
+          if not (b2 >= 128 and b2 <= 191 and b3 >= 128 and b3 <= 191) then
+            return M.open.system(dest)
+          else
+            i = i + 2
+          end
+        elseif b >= 240 and b <= 247 then
+          -- 4-byte sequence
+          local c2 = contents:sub(i + 1, i + 1)
+          local c3 = contents:sub(i + 2, i + 2)
+          local c4 = contents:sub(i + 3, i + 3)
+          local b2, b3, b4 = string.byte(c2), string.byte(c3), string.byte(c4)
+          if not (b2 >= 128 and b2 <= 191 and b3 >= 128 and b3 <= 191 and b4 >= 128 and b4 <= 191) then
+            return M.open.system(dest)
+          else
+            i = i + 3
+          end
+        end
+      end
     end
   end
 
