@@ -267,7 +267,7 @@ M.find.link = function()
   local dest = nil
   for child, _ in node:iter_children() do
     if child:type() == "link_destination" then
-      dest = vim.treesitter.query.get_node_text(child, pos[1])
+      dest = vim.treesitter.get_node_text(child, pos[1])
       break
     end
   end
