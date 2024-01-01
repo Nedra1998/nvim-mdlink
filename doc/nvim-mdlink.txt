@@ -1,4 +1,4 @@
-*nvim-mdlink* Convinience utilitys for working with links in markdown
+nvim-mdlink Convinience utilitys for working with links in markdown
 
 ================================================================================
 CONTENTS                                                           *nvim-mdlink*
@@ -181,7 +181,7 @@ follow_or_create()                            *nvim-mdlink.follow_or_create()*
     Attempts to follow a link under the cursor using |nvim-mdlink.follow()|, and
     if no link is found then it will use |nvim-mdlink.create()| to create a new
     link.
-    
+
     This is one of the primary interfaces used for interacting with the library,
     see |nvim-mdlink-mappings| for details.
 
@@ -198,3 +198,4 @@ setting |nvim-mdlink.keymap|.
 
 `<CR>` follow_or_create  follow a link under the cursor or create a new link
 `<BS>` stack_pop         after following a link go back to the previous buffer
+

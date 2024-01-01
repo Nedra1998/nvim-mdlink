@@ -220,7 +220,7 @@ M.list.headers = function(input)
   tsparser:parse()
 
   -- Parse the query string for markdown
-  local query = vim.treesitter.parse_query("markdown", MARKDOWN_SECTION_QUERY)
+  local query = vim.treesitter.query.parse("markdown", MARKDOWN_SECTION_QUERY)
 
   local headings = {}
   -- Search the trees for markdown sections
