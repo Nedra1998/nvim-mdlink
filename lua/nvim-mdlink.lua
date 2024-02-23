@@ -1,6 +1,7 @@
 local M = {}
 
 M.config = {
+  max_depth = 5,
   keymap = true,
   cmp = false,
 }
@@ -156,14 +157,31 @@ M.list.files = function()
     return FILE_CACHE["data"]
   end
 
-  local cwd = vim.fn.getcwd()
-  local files = {}
-  for file in vim.fn.glob("**/*"):gmatch("[^\n]+") do
-    file = cwd .. "/" .. file
-    if vim.fn.isdirectory(file) == 0 then
-      table.insert(files, file)
+  local function list_files(path, depth)
+    if depth == nil then
+      depth = 0
+    elseif depth >= M.config.max_depth then
+      return {}
     end
+
+    local files = {}
+    for _, fname in ipairs(vim.fn.readdir(path)) do
+      if vim.fn.isdirectory(path .. "/" .. fname) == 1 then
+        if not fname:match("^%.") then
+          for _, subfile in ipairs(list_files(path .. "/" .. fname, depth + 1)) do
+            table.insert(files, subfile)
+          end
+        end
+      elseif not fname:match("^%.") then
+        table.insert(files, path .. "/" .. fname)
+      end
+    end
+    return files
   end
+
+  local home_directory = os.getenv("HOME") or os.getenv("USERPROFILE")
+  local cwd = vim.fn.getcwd()
+  local files = list_files(cwd, (cwd == home_directory) and M.config.max_depth - 2 or 0)
 
   FILE_CACHE = {
     ttl = os.time() + 60,

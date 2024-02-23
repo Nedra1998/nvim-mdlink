@@ -31,6 +31,7 @@ Subsequent calls to setup will replace the previous configuration.
 
 >
     require('nvim-mdlink').setup({
+      max_depth = 5
       keymap = true,
       cmp = true
     })
@@ -48,6 +49,13 @@ registered.
 <
 
 Here is a list of the options available in the setup call:
+
+*nvim-mdlink.max_depth*
+Configure the depth for searching for files to link to. This is used to limit
+the search depth for files when creating links. If the depth is set to 1 then
+it will search the current directory only. Setting this value too high may
+have performance implications when indexing large directories.
+  Type: `int`, Default: `5`
 
 *nvim-mdlink.keymap*
 Setup the default keymap for markdown buffers. See |nvim-mdlink-keys| for
@@ -89,8 +97,10 @@ find.header(source: number|string, query: string)  *nvim-mdlink.find.header()*
         (string|nil) the sanitized header label if one was found, otherwise nil.
 
 list.files()                                        *nvim-mdlink.list.files()*
-    List all files in the current working directory recursivly. Because this
-    oepration can be expensive, the list of files will be cached internally to
+    List all files in the current working directory recursivly until hitting
+    the |nvim-mdlink.max_depth|, or if the current working directory is the
+    home directory then it will only search to a depth of two. Because this
+    operation can be expensive, the list of files will be cached internally to
     improve repeate calls to the function.
 
     Return: ~
