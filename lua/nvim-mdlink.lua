@@ -103,14 +103,20 @@ local function select_text(mode)
 end
 
 M.build_link = function(label, file, header)
+  local link = ""
   if file and header then
-    return "[" .. label .. "](" .. relative_path(vim.api.nvim_buf_get_name(0), file) .. "#" .. header .. ")"
+    link = relative_path(vim.api.nvim_buf_get_name(0), file) .. "#" .. header
   elseif header then
-    return "[" .. label .. "](#" .. header .. ")"
+    link = "#" .. header
   elseif file then
-    return "[" .. label .. "](" .. relative_path(vim.api.nvim_buf_get_name(0), file) .. ")"
+    link = relative_path(vim.api.nvim_buf_get_name(0), file)
   end
-  return nil
+
+  if link:match(" ") then
+    return "[" .. label .. "](<" .. link .. ">)"
+  else
+    return "[" .. label .. "](" .. link .. ")"
+  end
 end
 
 M.stack_push = function(previous_file, current_file)
@@ -294,6 +300,9 @@ M.find.link = function()
   if dest == nil or dest:len() == 0 or dest == "#" then
     return true
   end
+
+  -- Remove the angle brackets from the destination if present
+  dest = dest:gsub("^<", ""):gsub(">$", "")
 
   return dest
 end
